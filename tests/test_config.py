@@ -2,6 +2,9 @@ import os
 import pytest
 from config import Config
 
+# Use non-existent path to avoid loading real .env during tests
+FAKE_ENV = "/nonexistent/.env"
+
 
 def test_config_from_env(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
@@ -14,7 +17,7 @@ def test_config_from_env(monkeypatch):
     monkeypatch.setenv("TTS_INTERVIEWER_VOICE", "onyx")
     monkeypatch.setenv("TTS_CANDIDATE_VOICE", "shimmer")
 
-    cfg = Config.from_env()
+    cfg = Config.from_env(FAKE_ENV)
     assert cfg.openai_api_key == "sk-test"
     assert cfg.openai_base_url == "https://test.com/v1"
     assert cfg.text_model == "gpt-4o-mini"
@@ -32,7 +35,7 @@ def test_config_tts_defaults_to_openai(monkeypatch):
     monkeypatch.delenv("TTS_API_KEY", raising=False)
     monkeypatch.delenv("TTS_BASE_URL", raising=False)
 
-    cfg = Config.from_env()
+    cfg = Config.from_env(FAKE_ENV)
     assert cfg.tts_api_key == "sk-main"
     assert cfg.tts_base_url == "https://main.com/v1"
 
@@ -42,7 +45,7 @@ def test_config_tts_override(monkeypatch):
     monkeypatch.setenv("TTS_API_KEY", "sk-tts")
     monkeypatch.setenv("TTS_BASE_URL", "https://tts.com/v1")
 
-    cfg = Config.from_env()
+    cfg = Config.from_env(FAKE_ENV)
     assert cfg.tts_api_key == "sk-tts"
     assert cfg.tts_base_url == "https://tts.com/v1"
 
@@ -50,4 +53,4 @@ def test_config_tts_override(monkeypatch):
 def test_config_missing_api_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     with pytest.raises(ValueError, match="OPENAI_API_KEY"):
-        Config.from_env()
+        Config.from_env(FAKE_ENV)

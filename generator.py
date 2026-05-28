@@ -1,9 +1,40 @@
 import json
 import logging
+import re
 from typing import List, Dict, Any
 from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
+
+
+def extract_json_from_response(content: str) -> Any:
+    """Extract JSON from LLM response, handling <think> tags and markdown code blocks."""
+    # Remove <think>...</think> blocks (reasoning model output)
+    content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL).strip()
+
+    # Try direct parse first
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        pass
+
+    # Try extracting from ```json ... ``` code blocks
+    match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', content, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(1).strip())
+        except json.JSONDecodeError:
+            pass
+
+    # Try finding JSON array in the content
+    match = re.search(r'\[.*\]', content, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            pass
+
+    raise ValueError(f"Could not extract JSON from response: {content[:200]}")
 
 SYSTEM_PROMPT_ZH = """你是一个技术面试模拟器。请生成关于 {topic} 的面试问答对话。
 
@@ -87,10 +118,9 @@ async def generate_interview_qa(
                 model=model,
                 messages=messages,
                 temperature=0.8,
-                response_format={"type": "json_object"},
             )
             content = response.choices[0].message.content
-            data = json.loads(content)
+            data = extract_json_from_response(content)
 
             # Handle case where LLM wraps in {"questions": [...]}
             if isinstance(data, dict):

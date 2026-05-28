@@ -220,6 +220,10 @@ async def run(args: argparse.Namespace) -> None:
                 client=tts_client,
                 items=tts_items,
                 concurrency=config.tts_concurrency,
+                tts_provider=config.tts_provider,
+                tts_api_key=config.tts_api_key,
+                tts_base_url=config.tts_base_url,
+                tts_model=config.tts_model,
             )
 
             qa_status = {}

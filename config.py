@@ -12,6 +12,8 @@ class Config:
     tts_base_url: str
     tts_interviewer_voice: str
     tts_candidate_voice: str
+    tts_provider: str  # "openai" or "minimax"
+    tts_model: str     # e.g. "speech-01-hd" for minimax
     language: str
     question_count: int
     tts_concurrency: int
@@ -33,6 +35,8 @@ class Config:
 
         tts_interviewer_voice = os.getenv("TTS_INTERVIEWER_VOICE", "alloy")
         tts_candidate_voice = os.getenv("TTS_CANDIDATE_VOICE", "nova")
+        tts_provider = os.getenv("TTS_PROVIDER", "openai")  # "openai" or "minimax"
+        tts_model = os.getenv("TTS_MODEL", "speech-01-hd")  # MiniMax model name
 
         language = os.getenv("LANGUAGE", "zh")
         question_count = int(os.getenv("QUESTION_COUNT", "10"))
@@ -47,6 +51,8 @@ class Config:
             tts_base_url=tts_base_url,
             tts_interviewer_voice=tts_interviewer_voice,
             tts_candidate_voice=tts_candidate_voice,
+            tts_provider=tts_provider,
+            tts_model=tts_model,
             language=language,
             question_count=question_count,
             tts_concurrency=tts_concurrency,

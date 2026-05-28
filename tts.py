@@ -18,6 +18,16 @@ MINIMAX_VOICE_MAP = {
     "fable": "female-chengshu",
 }
 
+# Edge-TTS voice mapping (friendly name -> edge voice)
+EDGE_VOICE_MAP = {
+    "alloy": "zh-CN-YunxiNeural",      # male, young
+    "nova": "zh-CN-XiaoxiaoNeural",    # female, young
+    "onyx": "zh-CN-YunjianNeural",     # male, mature
+    "shimmer": "zh-CN-XiaoyiNeural",   # female, mature
+    "echo": "zh-CN-YunjianNeural",     # male, deep
+    "fable": "zh-CN-XiaochenNeural",   # female, warm
+}
+
 
 async def _synthesize_openai(
     client: AsyncOpenAI,
@@ -75,17 +85,13 @@ async def _synthesize_minimax(
 
         data = resp.json()
 
-        # Check for API-level errors
         base_resp = data.get("base_resp", {})
         if base_resp.get("status_code", 0) != 0:
             raise RuntimeError(f"MiniMax TTS error: {base_resp.get('status_msg', 'unknown')}")
 
-        # Audio data is in data.audio as hex-encoded bytes
         audio_hex = data.get("data", {}).get("audio", "")
         if not audio_hex:
-            # Try alternative response format: audio file in extra_info
             audio_hex = data.get("extra_info", {}).get("audio", "")
-
         if not audio_hex:
             raise RuntimeError(f"No audio data in MiniMax response: {list(data.keys())}")
 
@@ -94,6 +100,31 @@ async def _synthesize_minimax(
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "wb") as f:
             f.write(audio_bytes)
+
+    return True
+
+
+async def _synthesize_edge(
+    text: str,
+    voice: str,
+    output_path: str,
+    language: str = "zh",
+) -> bool:
+    """Synthesize using edge-tts (free, no API key needed)."""
+    import edge_tts
+
+    voice_name = EDGE_VOICE_MAP.get(voice)
+    if not voice_name:
+        # Fallback: if voice is already a full edge voice name, use it directly
+        if "-" in voice:
+            voice_name = voice
+        else:
+            voice_name = "zh-CN-YunxiNeural" if language == "zh" else "en-US-GuyNeural"
+
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+
+    communicate = edge_tts.Communicate(text, voice_name)
+    await communicate.save(output_path)
 
     return True
 
@@ -108,6 +139,7 @@ async def synthesize_single(
     tts_api_key: str = "",
     tts_base_url: str = "",
     tts_model: str = "speech-01-hd",
+    language: str = "zh",
 ) -> bool:
     """Synthesize a single text to MP3 file. Returns True on success."""
     for attempt in range(max_retries + 1):
@@ -120,6 +152,13 @@ async def synthesize_single(
                     voice=voice,
                     output_path=output_path,
                     model=tts_model,
+                )
+            elif tts_provider == "edge":
+                await _synthesize_edge(
+                    text=text,
+                    voice=voice,
+                    output_path=output_path,
+                    language=language,
                 )
             else:
                 await _synthesize_openai(client, text, voice, output_path)
@@ -146,6 +185,7 @@ async def synthesize_batch(
     tts_api_key: str = "",
     tts_base_url: str = "",
     tts_model: str = "speech-01-hd",
+    language: str = "zh",
 ) -> List[bool]:
     """Synthesize multiple audio files with concurrency control.
 
@@ -165,6 +205,7 @@ async def synthesize_batch(
                 tts_api_key=tts_api_key,
                 tts_base_url=tts_base_url,
                 tts_model=tts_model,
+                language=language,
             )
 
     tasks = [_synth(item) for item in items]

@@ -224,6 +224,7 @@ async def run(args: argparse.Namespace) -> None:
                 tts_api_key=config.tts_api_key,
                 tts_base_url=config.tts_base_url,
                 tts_model=config.tts_model,
+                language=language,
             )
 
             qa_status = {}

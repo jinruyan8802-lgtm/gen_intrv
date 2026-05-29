@@ -42,7 +42,7 @@ def build_output_paths(topic: str) -> Dict[str, str]:
         "data_json": f"{base}/data.json",
         "interview_md": f"{base}/interview.md",
         "audio_dir": f"{base}/audio",
-        "podcast": f"{base}/podcast.mp3",
+        "podcast": f"{base}/{topic}.mp3",
     }
 
 

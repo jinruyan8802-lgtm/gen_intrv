@@ -1,5 +1,6 @@
 # tts.py
 import asyncio
+import base64
 import logging
 from pathlib import Path
 from typing import List, Dict, Any
@@ -7,6 +8,16 @@ from openai import AsyncOpenAI
 import httpx
 
 logger = logging.getLogger(__name__)
+
+# MiMo-V2.5-TTS voice mapping (friendly name -> voice_id)
+MIMO_VOICE_MAP = {
+    "alloy": "苏打",        # Chinese Male
+    "nova": "茉莉",         # Chinese Female
+    "onyx": "白桦",         # Chinese Male (mature)
+    "shimmer": "冰糖",      # Chinese Female (default)
+    "echo": "白桦",         # Chinese Male (deep)
+    "fable": "茉莉",        # Chinese Female (warm)
+}
 
 # MiniMax voice ID mapping (friendly name -> voice_id)
 MINIMAX_VOICE_MAP = {
@@ -44,6 +55,64 @@ async def _synthesize_openai(
     )
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     await response.stream_to_file(output_path)
+    if Path(output_path).stat().st_size == 0:
+        Path(output_path).unlink(missing_ok=True)
+        raise RuntimeError("OpenAI TTS returned empty audio")
+    return True
+
+
+async def _synthesize_mimo(
+    api_key: str,
+    base_url: str,
+    text: str,
+    voice: str,
+    output_path: str,
+    model: str = "mimo-v2.5-tts",
+) -> bool:
+    """Synthesize using MiMo-V2.5-TTS API (OpenAI-compatible chat/completions)."""
+    voice_id = MIMO_VOICE_MAP.get(voice, voice)
+
+    url = f"{base_url.rstrip('/')}/chat/completions"
+    headers = {
+        "api-key": api_key,
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "assistant", "content": text},
+        ],
+        "audio": {
+            "format": "mp3",
+            "voice": voice_id,
+        },
+    }
+
+    async with httpx.AsyncClient(timeout=120) as http_client:
+        resp = await http_client.post(url, headers=headers, json=payload)
+        resp.raise_for_status()
+
+        data = resp.json()
+
+        choices = data.get("choices", [])
+        if not choices:
+            raise RuntimeError(f"MiMo TTS: no choices in response")
+
+        audio_obj = choices[0].get("message", {}).get("audio", {})
+        audio_b64 = audio_obj.get("data", "")
+        if not audio_b64:
+            raise RuntimeError(f"MiMo TTS: no audio data in response")
+
+        audio_bytes = base64.b64decode(audio_b64)
+
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, "wb") as f:
+            f.write(audio_bytes)
+
+        if Path(output_path).stat().st_size == 0:
+            Path(output_path).unlink(missing_ok=True)
+            raise RuntimeError("MiMo TTS returned empty audio")
+
     return True
 
 
@@ -101,6 +170,10 @@ async def _synthesize_minimax(
         with open(output_path, "wb") as f:
             f.write(audio_bytes)
 
+        if Path(output_path).stat().st_size == 0:
+            Path(output_path).unlink(missing_ok=True)
+            raise RuntimeError("MiniMax TTS returned empty audio")
+
     return True
 
 
@@ -123,10 +196,19 @@ async def _synthesize_edge(
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-    communicate = edge_tts.Communicate(text, voice_name)
-    await communicate.save(output_path)
+    for attempt in range(3):
+        communicate = edge_tts.Communicate(text, voice_name)
+        await communicate.save(output_path)
 
-    return True
+        if Path(output_path).exists() and Path(output_path).stat().st_size > 0:
+            return True
+
+        logger.warning(f"Edge TTS returned empty audio, attempt {attempt + 1}/3")
+        Path(output_path).unlink(missing_ok=True)
+        if attempt < 2:
+            await asyncio.sleep(1)
+
+    raise RuntimeError("Edge TTS returned empty audio after 3 attempts")
 
 
 async def synthesize_single(
@@ -144,7 +226,16 @@ async def synthesize_single(
     """Synthesize a single text to MP3 file. Returns True on success."""
     for attempt in range(max_retries + 1):
         try:
-            if tts_provider == "minimax":
+            if tts_provider == "mimo":
+                await _synthesize_mimo(
+                    api_key=tts_api_key,
+                    base_url=tts_base_url,
+                    text=text,
+                    voice=voice,
+                    output_path=output_path,
+                    model=tts_model,
+                )
+            elif tts_provider == "minimax":
                 await _synthesize_minimax(
                     api_key=tts_api_key,
                     base_url=tts_base_url,

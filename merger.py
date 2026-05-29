@@ -33,18 +33,18 @@ def merge_audio_segments(
         a_path = qa.get("audio_answer")
 
         # Add question audio
-        if q_path and Path(q_path).exists():
+        if q_path and Path(q_path).exists() and Path(q_path).stat().st_size > 0:
             question_audio = AudioSegment.from_mp3(q_path)
             combined += question_audio
         else:
             logger.warning(f"Missing question audio for Q{qa['index']}: {q_path}")
 
         # Add pause between Q and A
-        if a_path and Path(a_path).exists():
+        if a_path and Path(a_path).exists() and Path(a_path).stat().st_size > 0:
             combined += pause_q_a
 
         # Add answer audio
-        if a_path and Path(a_path).exists():
+        if a_path and Path(a_path).exists() and Path(a_path).stat().st_size > 0:
             answer_audio = AudioSegment.from_mp3(a_path)
             combined += answer_audio
         else:

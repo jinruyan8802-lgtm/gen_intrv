@@ -13,6 +13,7 @@ from models import QAPair, InterviewSession
 from generator import generate_interview_qa
 from dedup import deduplicate
 from tts import synthesize_batch
+from text_normalizer import normalize_for_tts
 from merger import merge_audio_segments
 from openai import AsyncOpenAI
 
@@ -197,14 +198,14 @@ async def run(args: argparse.Namespace) -> None:
             a_path = str(audio_dir / f"q{qa.index:03d}_candidate.mp3")
 
             tts_items.append({
-                "text": qa.question,
+                "text": normalize_for_tts(qa.question),
                 "voice": config.tts_interviewer_voice,
                 "output": q_path,
                 "qa_id": qa.id,
                 "type": "question",
             })
             tts_items.append({
-                "text": qa.answer,
+                "text": normalize_for_tts(qa.answer),
                 "voice": config.tts_candidate_voice,
                 "output": a_path,
                 "qa_id": qa.id,

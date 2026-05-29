@@ -1,4 +1,5 @@
 venv/
+all_mp3s/
 .env
 output/
 __pycache__/

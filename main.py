@@ -227,6 +227,8 @@ async def run(args: argparse.Namespace) -> None:
                 tts_base_url=config.tts_base_url,
                 tts_model=config.tts_model,
                 language=language,
+                cosyvoice_root=config.cosyvoice_root,
+                cosyvoice_conda_env=config.cosyvoice_conda_env,
             )
 
             qa_status = {}

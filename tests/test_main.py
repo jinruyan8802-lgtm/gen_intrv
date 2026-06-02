@@ -28,4 +28,4 @@ def test_build_output_paths():
     assert paths["data_json"] == "output/kubernetes/data.json"
     assert paths["interview_md"] == "output/kubernetes/interview.md"
     assert paths["audio_dir"] == "output/kubernetes/audio"
-    assert paths["podcast"] == "output/kubernetes/podcast.mp3"
+    assert paths["podcast"] == "output/kubernetes/kubernetes.mp3"

@@ -54,3 +54,26 @@ def test_config_missing_api_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     with pytest.raises(ValueError, match="OPENAI_API_KEY"):
         Config.from_env(FAKE_ENV)
+
+
+def test_config_cosyvoice_defaults(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("TTS_PROVIDER", "cosyvoice")
+
+    cfg = Config.from_env(FAKE_ENV)
+    assert cfg.tts_provider == "cosyvoice"
+    assert cfg.cosyvoice_root == ""  # defaults to empty, must be set explicitly
+    assert cfg.cosyvoice_conda_env == "cosyvoice"
+
+
+def test_config_cosyvoice_override(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("TTS_PROVIDER", "cosyvoice")
+    monkeypatch.setenv("COSYVOICE_ROOT", "/custom/cosyvoice")
+    monkeypatch.setenv("COSYVOICE_CONDA_ENV", "cv_env")
+    monkeypatch.setenv("TTS_MODEL", "CosyVoice-300M-SFT")
+
+    cfg = Config.from_env(FAKE_ENV)
+    assert cfg.cosyvoice_root == "/custom/cosyvoice"
+    assert cfg.cosyvoice_conda_env == "cv_env"
+    assert cfg.tts_model == "CosyVoice-300M-SFT"

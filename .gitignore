@@ -1,4 +1,5 @@
 venv/
+*.mp3
 all_mp3s/
 .env
 output/

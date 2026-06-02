@@ -3,6 +3,7 @@ import argparse
 import asyncio
 import json
 import logging
+import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -253,6 +254,12 @@ async def run(args: argparse.Namespace) -> None:
         ]
         merge_audio_segments(merge_data, paths["podcast"])
         logger.info(f"Podcast saved to {paths['podcast']}")
+
+        # Clean up temporary audio files after successful merge
+        audio_dir = Path(paths["audio_dir"])
+        if audio_dir.exists():
+            shutil.rmtree(audio_dir)
+            logger.info(f"Cleaned up temporary audio directory: {audio_dir}")
 
 
 def main():

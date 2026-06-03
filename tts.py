@@ -218,16 +218,27 @@ async def _synthesize_edge(
             if Path(output_path).exists() and Path(output_path).stat().st_size > 0:
                 return True
 
-            logger.warning(f"Edge TTS returned empty audio file for {output_path}, attempt {attempt + 1}/5")
+            logger.warning(
+                f"Edge TTS returned empty audio file for {output_path}, "
+                f"attempt {attempt + 1}/5, text_len={len(text)}, voice={voice_name}"
+            )
         except Exception as e:
-            logger.warning(f"Edge TTS exception for {output_path} on attempt {attempt + 1}/5: {e}")
+            exc_type = type(e).__name__
+            logger.warning(
+                f"Edge TTS {exc_type} for {output_path} on attempt {attempt + 1}/5: {e}. "
+                f"text_len={len(text)}, voice={voice_name}"
+            )
+            # Print full traceback for the first failure and every 2nd retry
+            if attempt == 0 or attempt == 2:
+                import traceback
+                logger.debug(f"Edge TTS traceback for {output_path}:\n{traceback.format_exc()}")
 
         Path(output_path).unlink(missing_ok=True)
         if attempt < 4:
             # Exponential backoff: 1s, 2s, 4s, 8s
             await asyncio.sleep(2 ** attempt)
 
-    raise RuntimeError("Edge TTS failed after 5 attempts")
+    raise RuntimeError(f"Edge TTS failed after 5 attempts for {output_path}")
 
 
 async def _synthesize_cosyvoice(
@@ -363,11 +374,18 @@ async def synthesize_single(
             return True
 
         except Exception as e:
-            logger.warning(f"TTS attempt {attempt + 1} failed for {output_path}: {e}")
+            exc_type = type(e).__name__
+            logger.warning(
+                f"TTS attempt {attempt + 1}/{max_retries + 1} failed for {output_path}: "
+                f"[{exc_type}] {e}"
+            )
             if attempt < max_retries:
                 await asyncio.sleep(1)
             else:
-                logger.error(f"TTS failed after {max_retries + 1} attempts: {output_path}")
+                logger.error(
+                    f"TTS ultimately failed for {output_path} after {max_retries + 1} attempts: "
+                    f"[{exc_type}] {e}"
+                )
                 return False
 
     return False
@@ -390,7 +408,12 @@ async def synthesize_batch(
     Each item: {"text": str, "voice": str, "output": str}
     Returns list of success booleans.
     """
-    semaphore = asyncio.Semaphore(concurrency)
+    # Edge-tts is a free service with aggressive rate limiting;
+    # cap concurrency to avoid "No audio was received" errors.
+    effective_concurrency = 1 if tts_provider == "edge" else concurrency
+    if tts_provider == "edge" and concurrency > 1:
+        logger.info(f"Edge TTS: reducing concurrency from {concurrency} to {effective_concurrency}")
+    semaphore = asyncio.Semaphore(effective_concurrency)
 
     async def _synth(item: Dict[str, Any]) -> bool:
         async with semaphore:

@@ -199,6 +199,7 @@ async def _synthesize_edge(
 ) -> bool:
     """Synthesize using edge-tts (free, no API key needed)."""
     import edge_tts
+    import random
 
     voice_name = EDGE_VOICE_MAP.get(voice)
     if not voice_name:
@@ -235,8 +236,13 @@ async def _synthesize_edge(
 
         Path(output_path).unlink(missing_ok=True)
         if attempt < 4:
-            # Exponential backoff: 1s, 2s, 4s, 8s
-            await asyncio.sleep(2 ** attempt)
+            # Exponential backoff with jitter: 2s, 4s, 8s, 16s
+            # Jitter prevents synchronized retry storms across concurrent tasks.
+            base_delay = 2 ** (attempt + 1)
+            jitter = random.uniform(0.5, 1.5)
+            delay = base_delay * jitter
+            logger.debug(f"Edge TTS retry {output_path} in {delay:.1f}s (attempt {attempt + 1}/5)")
+            await asyncio.sleep(delay)
 
     raise RuntimeError(f"Edge TTS failed after 5 attempts for {output_path}")
 
@@ -331,6 +337,23 @@ async def synthesize_single(
     cosyvoice_conda_env: str = "cosyvoice",
 ) -> bool:
     """Synthesize a single text to MP3 file. Returns True on success."""
+    # Edge TTS has its own internal retry logic with exponential backoff;
+    # wrapping it in another retry loop is counter-productive and can
+    # trigger stricter rate limiting.
+    if tts_provider == "edge":
+        try:
+            await _synthesize_edge(
+                text=text,
+                voice=voice,
+                output_path=output_path,
+                language=language,
+            )
+            logger.info(f"Synthesized: {output_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Edge TTS failed for {output_path}: [{type(e).__name__}] {e}")
+            return False
+
     for attempt in range(max_retries + 1):
         try:
             if tts_provider == "mimo":
@@ -350,13 +373,6 @@ async def synthesize_single(
                     voice=voice,
                     output_path=output_path,
                     model=tts_model,
-                )
-            elif tts_provider == "edge":
-                await _synthesize_edge(
-                    text=text,
-                    voice=voice,
-                    output_path=output_path,
-                    language=language,
                 )
             elif tts_provider == "cosyvoice":
                 await _synthesize_cosyvoice(
@@ -415,9 +431,9 @@ async def synthesize_batch(
         logger.info(f"Edge TTS: reducing concurrency from {concurrency} to {effective_concurrency}")
     semaphore = asyncio.Semaphore(effective_concurrency)
 
-    async def _synth(item: Dict[str, Any]) -> bool:
+    async def _synth(item: Dict[str, Any], is_last: bool = False) -> bool:
         async with semaphore:
-            return await synthesize_single(
+            result = await synthesize_single(
                 client=client,
                 text=item["text"],
                 voice=item["voice"],
@@ -430,6 +446,12 @@ async def synthesize_batch(
                 cosyvoice_root=cosyvoice_root,
                 cosyvoice_conda_env=cosyvoice_conda_env,
             )
+            # Edge TTS rate-limits aggressively even for serial requests.
+            # Pause briefly before releasing the semaphore so the next
+            # request doesn't start immediately.
+            if tts_provider == "edge" and not is_last:
+                await asyncio.sleep(1.5)
+            return result
 
-    tasks = [_synth(item) for item in items]
+    tasks = [_synth(item, is_last=(i == len(items) - 1)) for i, item in enumerate(items)]
     return await asyncio.gather(*tasks)

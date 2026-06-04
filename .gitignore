@@ -1,8 +1,10 @@
 venv/
 *.mp3
-all_mp3s/
+all_mp3s*/
+graphify-out/
 .env
-output/
+output*/
 __pycache__/
 *.pyc
+*.docx
 .pytest_cache/

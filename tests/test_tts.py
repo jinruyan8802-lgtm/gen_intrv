@@ -102,3 +102,121 @@ async def test_synthesize_single_cosyvoice_failure():
         )
 
     assert result is False
+
+
+@pytest.mark.asyncio
+async def test_synthesize_single_edge_success(tmp_path):
+    """Edge TTS success on first attempt."""
+    output_path = str(tmp_path / "test.mp3")
+
+    mock_communicate = MagicMock()
+
+    async def mock_save(path):
+        with open(path, "wb") as f:
+            f.write(b"fake-edge-audio")
+
+    mock_communicate.save = mock_save
+
+    with patch("edge_tts.Communicate", return_value=mock_communicate) as mock_cls:
+        result = await synthesize_single(
+            None, "你好", "onyx", output_path,
+            tts_provider="edge",
+        )
+
+    assert result is True
+    assert os.path.exists(output_path)
+    mock_cls.assert_called_once_with("你好", "zh-CN-YunjianNeural")
+
+
+@pytest.mark.asyncio
+async def test_synthesize_single_edge_retries_then_success(tmp_path):
+    """Edge TTS retries on NoAudioReceived, then succeeds."""
+    output_path = str(tmp_path / "test.mp3")
+
+    mock_communicate = MagicMock()
+    call_count = 0
+
+    async def mock_save(path):
+        nonlocal call_count
+        call_count += 1
+        if call_count <= 2:
+            # Simulate edge-tts NoAudioReceived: file is empty after save
+            with open(path, "wb") as f:
+                f.write(b"")
+            return
+        with open(path, "wb") as f:
+            f.write(b"fake-edge-audio")
+
+    mock_communicate.save = mock_save
+
+    with patch("edge_tts.Communicate", return_value=mock_communicate) as mock_cls:
+        with patch("tts.asyncio.sleep") as mock_sleep:
+            result = await synthesize_single(
+                None, "Hello", "alloy", output_path,
+                tts_provider="edge",
+            )
+
+    assert result is True
+    # Inner retry loop should attempt 3 times (2 empty + 1 success)
+    assert call_count == 3
+    # Outer retry loop should NOT be invoked for edge provider
+    # (if it were, save would be called 3 * 3 = 9 times)
+    assert mock_cls.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_synthesize_single_edge_all_retries_fail():
+    """Edge TTS all 5 inner retries fail; outer loop must not re-enter."""
+    mock_communicate = MagicMock()
+
+    async def mock_save(path):
+        # Always empty → NoAudioReceived path
+        with open(path, "wb") as f:
+            f.write(b"")
+
+    mock_communicate.save = mock_save
+
+    with patch("edge_tts.Communicate", return_value=mock_communicate) as mock_cls:
+        with patch("tts.asyncio.sleep"):
+            result = await synthesize_single(
+                None, "Hello", "alloy", "/tmp/test_edge.mp3",
+                tts_provider="edge",
+            )
+
+    assert result is False
+    # Should only attempt 5 times (inner loop), not 15 (outer + inner)
+    assert mock_cls.call_count == 5
+
+
+@pytest.mark.asyncio
+async def test_synthesize_batch_edge_adds_delay_between_requests(tmp_path):
+    """Edge TTS batch adds delay between serial requests."""
+    output_path_a = str(tmp_path / "a.mp3")
+    output_path_b = str(tmp_path / "b.mp3")
+
+    mock_communicate = MagicMock()
+
+    async def mock_save(path):
+        with open(path, "wb") as f:
+            f.write(b"audio")
+
+    mock_communicate.save = mock_save
+
+    items = [
+        {"text": "First", "voice": "alloy", "output": output_path_a},
+        {"text": "Second", "voice": "nova", "output": output_path_b},
+    ]
+
+    with patch("edge_tts.Communicate", return_value=mock_communicate):
+        with patch("tts.asyncio.sleep") as mock_sleep:
+            results = await synthesize_batch(
+                None, items,
+                tts_provider="edge",
+                concurrency=5,  # Should be reduced to 1 internally
+            )
+
+    assert all(results)
+    # Should sleep between the two requests (not after the last one)
+    delay_calls = [c for c in mock_sleep.call_args_list
+                   if c.args and c.args[0] == 1.5]
+    assert len(delay_calls) == 1, f"Expected 1 delay call, got {len(delay_calls)}: {mock_sleep.call_args_list}"

@@ -59,10 +59,11 @@ async def _synthesize_openai(
     text: str,
     voice: str,
     output_path: str,
+    model: str = "mimo-v2.5-tts",
 ) -> bool:
     """Synthesize using OpenAI-compatible TTS API."""
     response = await client.audio.speech.create(
-        model="tts-1",
+        model=model,
         voice=voice,
         input=text,
         response_format="mp3",
@@ -384,7 +385,7 @@ async def synthesize_single(
                     model_name=tts_model,
                 )
             else:
-                await _synthesize_openai(client, text, voice, output_path)
+                await _synthesize_openai(client, text, voice, output_path,model_name=tts_model)
 
             logger.info(f"Synthesized: {output_path}")
             return True
